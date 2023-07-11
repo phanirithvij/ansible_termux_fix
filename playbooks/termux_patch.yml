@@ -1,0 +1,46 @@
+#!/usr/bin/env ansible-playbook
+---
+- hosts: localhost
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+  tasks:
+    - name: ensure git exists
+      ansible.builtin.shell: command -v git
+      register: git_found
+      failed_when: false
+      changed_when: false
+    - name: install git
+      ansible.builtin.command: apt -o Apt::Get::Assume-Yes=true install git
+      changed_when: false
+      when: 'git_found.rc != 0'
+    - name: setup patch file
+      args:
+        creates: ~/.ansible/tmp/.termux-ansible.patch
+      ansible.builtin.shell: |
+        cat > ~/.ansible/tmp/.termux-ansible.patch << EOF
+        diff --git a/plugins/connection/local.py b/plugins/connection/local.py
+        index 27afd10..e21c4df 100644
+        --- a/plugins/connection/local.py
+        +++ b/plugins/connection/local.py
+        @@ -42,6 +42,7 @@ class Connection(ConnectionBase):
+        
+             transport = 'local'
+             has_pipelining = True
+        +    _remote_is_local = True
+        
+             def __init__(self, *args, **kwargs):
+        
+        EOF
+    - name: get ansible install location
+      changed_when: false
+      ansible.builtin.shell: |
+        {{ ansible_python_interpreter }} -c "import ansible; print(ansible.__file__)" | xargs dirname
+      register: ansible_dir
+    - name: patch ansible to work on termux with connection local
+      ansible.builtin.command: git apply ~/.ansible/tmp/.termux-ansible.patch
+      register: patched_out
+      args:
+        chdir: "{{ ansible_dir.stdout }}"
+      failed_when: 'patched_out.rc != 0 and "patch does not apply" not in patched_out.stderr'
+      changed_when: 'patched_out.rc == 0'

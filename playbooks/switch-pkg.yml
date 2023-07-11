@@ -1,0 +1,14 @@
+#!/usr/bin/env ansible-playbook
+---
+- hosts: localhost
+  connection: local
+  gather_facts: true
+  gather_subset:
+    - "env"
+    - "!all"
+    - "!min"
+  tasks:
+    # TODO
+    - name: somehow determine current usr dir state
+    - name: get the other bootstrap
+    - name: switcheroo

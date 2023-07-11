@@ -1,0 +1,23 @@
+usr
+> toggle
+usr>pacman
+apt
+> toggle
+usr>apt
+pacman
+
+----
+
+usr
+> pacman
+usr>pacman
+apt
+> apt
+usr>apt
+pacman
+
+----
+
+usr
+> apt
+usr>apt

@@ -1,0 +1,50 @@
+#!/usr/bin/env ansible-playbook
+# https://wiki.termux.com/wiki/Switching_package_manager
+---
+- hosts: localhost
+  connection: local
+  gather_facts: true
+  gather_subset:
+    - "env"
+    - "!all"
+    - "!min"
+  name: switch to apt package manager
+  vars:
+    # Set proper interpreter even if not connection: local
+    # https://willthames.github.io/2018/07/01/connection-local-vs-delegate_to-localhost.html
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    prefix_dir: "{{ ansible_env.PREFIX }}"
+    root_dir: "{{ prefix_dir | dirname }}"
+    dest_dir: "{{ root_dir }}/usr-apt"
+    pacman_dir: "{{ root_dir }}/usr-pacman"
+    backup_dir: "{{ root_dir }}/usr-backup"
+  tasks:
+    - name: mkdir $PREFIX/usr-apt
+      ansible.builtin.file:
+        path: "{{ dest_dir }}"
+        state: directory
+    - name: download and unzip apt bootstrap package
+      ansible.builtin.unarchive:
+        src: "https://github.com/termux/termux-packages/releases/latest/download/bootstrap-aarch64.zip"
+        dest: "{{ dest_dir }}"
+        remote_src: yes
+    - name: create symlinks
+      ansible.builtin.shell: |
+        cat SYMLINKS.txt | awk -F "←" '{system("ln -s '"'"'"$1"'"'"' '"'"'"$2"'"'"'")}'
+        touch .apt-done
+      args:
+        chdir: "{{ dest_dir }}"
+        creates: "{{ dest_dir }}/.apt-done"
+    - name: backup old usr directory
+      # Use system bin tools as usr is getting moved
+      # https://wiki.termux.com/wiki/Recover_a_broken_environment
+      # /system/bin/ln -s usr-apt {{ prefix_dir }}
+      # symlinking gave pacman errors so moving instead
+      ansible.builtin.shell: |
+        mv {{ prefix_dir }} {{ backup_dir }}
+        /system/bin/mv {{ dest_dir }} {{ prefix_dir }}
+      args:
+        chdir: "{{ root_dir }}"
+    - name: install python in new environment
+      ansible.builtin.raw: |
+        apt -o Apt::Get::Assume-Yes=true install python python-pip

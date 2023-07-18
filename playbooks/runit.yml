@@ -26,22 +26,26 @@
         - name: setup redis runit service
           block:
             - name: "redis: make service log directory"
+              tags: [redis]
               ansible.builtin.file:
                 path: "$PREFIX/var/service/redis/log"
                 state: directory
                 recurse: true
             - name: "redis: symlink log to svlogger"
+              tags: [redis]
               ansible.builtin.file:
                 src: $PREFIX/share/termux-services/svlogger
                 dest: $PREFIX/var/service/redis/log/run
                 state: link
             - name: "redis: create run script"
+              tags: [redis]
               ansible.builtin.copy:
                 content: "#!/bin/sh"
                 mode: '0755'
                 force: false
                 dest: $PREFIX/var/service/redis/run
             - name: "redis: write service script"
+              tags: [redis]
               ansible.builtin.blockinfile:
                 dest: $PREFIX/var/service/redis/run
                 marker: "# {mark} ansible managed runit service"
@@ -52,40 +56,48 @@
                     --protected-mode no \
                     2>&1
             - name: "redis: enable service"
+              tags: [redis, redis_quick]
               ansible.builtin.command: vsv enable redis
               register: redoutt
               changed_when: redoutt.rc != 0
             - name: "redis: restart service"
+              tags: [redis, redis_quick]
               ansible.builtin.command: vsv restart redis
               changed_when: false
     - name: setup serf
       block:
         - name: check if serf exists
+          tags: [serf]
           ansible.builtin.shell: command -v serf
           register: serfexists
           changed_when: false
         - name: install serf
+          tags: [serf]
           when: "serfexists.rc != 0"
           ansible.builtin.command: go install -ldflags="-w -s" github.com/hashicorp/serf/cmd/serf@master
         - name: "serf: setup runit service and config"
           block:
             - name: "serf: make service log directory"
+              tags: [serf]
               ansible.builtin.file:
                 path: "$PREFIX/var/service/serf/log"
                 state: directory
                 recurse: true
             - name: "serf: symlink log to svlogger"
+              tags: [serf]
               ansible.builtin.file:
                 src: $PREFIX/share/termux-services/svlogger
                 dest: $PREFIX/var/service/serf/log/run
                 state: link
             - name: "serf: mkdir scripts dir"
+              tags: [serf]
               ansible.builtin.file:
                 path: $HOME/.config/serf/scripts
                 recurse: true
                 state: directory
             - name: "serf: write config"
               register: config_copy_res
+              tags: [serf, serf_quick]
               ansible.builtin.copy:
                 dest: $HOME/.config/serf/config.json
                 mode: '644'
@@ -106,12 +118,14 @@
                   }
             # - name: TODO copy serf handler script from dotfiles
             - name: "serf: create run script"
+              tags: [serf]
               ansible.builtin.copy:
                 content: "#!/bin/sh"
                 mode: '0755'
                 force: false
                 dest: $PREFIX/var/service/serf/run
             - name: "serf: write run service script"
+              tags: [serf]
               ansible.builtin.blockinfile:
                 dest: $PREFIX/var/service/serf/run
                 marker: "# {mark} ansible managed runit service"
@@ -119,23 +133,31 @@
                   exec serf agent \
                     -config-file=$HOME/.config/serf/config.json
             - name: "serf: enable service"
+              tags: [serf, serf_quick]
               ansible.builtin.command: vsv enable serf
               register: serfoutt
               changed_when: serfoutt.rc != 0
             - name: "serf: restart service"
+              tags: [serf, serf_quick]
               when: config_copy_res.changed
               ansible.builtin.command: vsv restart serf
               changed_when: false
               # TODO move this rpc-addr into an env var SERF_RPC_ADDR
             - name: "serf: get existing tags"
+              tags: [serf, serf_quick]
               changed_when: false
               register: existing_tags
               ansible.builtin.shell: |
                 serf info -rpc-addr=0.0.0.0:7373 -format=json \
                 | jq -r '.tags | to_entries | map("\(.key)=\(.value|tostring)") | join(" ")'
-              # TODO move cpu=..os=android i.e. tags into a variable to reuse
+              # TODO move tags into a variable to reuse
             - name: "serf: set tags for termux"
+              tags: [serf, serf_quick]
               ansible.builtin.shell: |
-                echo cpu=arm64 extras:class=termux os=android \
-                    | xargs -n 1 serf tags -rpc-addr=0.0.0.0:7373 -set
-              changed_when: "'cpu=arm64 extras:class=termux os=android' not in existing_tags.stdout"
+                echo \
+                  class=termux \
+                  offers=redis,sshd \
+                  redis_port=6379 \
+                  sshd_port=8022 \
+                | xargs -n 1 serf tags -rpc-addr=0.0.0.0:7373 -set
+              changed_when: "'class=termux' not in existing_tags.stdout"

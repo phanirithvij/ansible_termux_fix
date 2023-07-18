@@ -77,12 +77,6 @@
                 path: $HOME/.config/serf/scripts
                 recurse: true
                 state: directory
-            - name: snapshot file
-              ansible.builtin.copy:
-                dest: $HOME/.config/serf/snapshot.json
-                content: ""
-                force: false
-                mode: '644'
             - name: write serf config
               register: config_copy_res
               ansible.builtin.copy:
@@ -125,3 +119,16 @@
               when: config_copy_res.changed
               ansible.builtin.command: vsv restart serf
               changed_when: false
+              # TODO move this rpc-addr into an env var SERF_RPC_ADDR
+            - name: get existing tags
+              changed_when: false
+              register: existing_tags
+              ansible.builtin.shell: |
+                serf info -rpc-addr=0.0.0.0:7373 -format=json \
+                | jq -r '.tags | to_entries | map("\(.key)=\(.value|tostring)") | join(" ")'
+              # TODO move cpu=..os=android i.e. tags into a variable to reuse
+            - name: set serf termux tags
+              ansible.builtin.shell: |
+                echo cpu=arm64 extras:class=termux os=android \
+                    | xargs -n 1 serf tags -rpc-addr=0.0.0.0:7373 -set
+              changed_when: "'cpu=arm64 extras:class=termux os=android' not in existing_tags.stdout"

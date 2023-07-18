@@ -1,5 +1,4 @@
 #!/usr/bin/env ansible-playbook
----
 - hosts: localhost
   gather_facts: false
   vars:
@@ -24,13 +23,13 @@
         --- a/plugins/connection/local.py
         +++ b/plugins/connection/local.py
         @@ -42,6 +42,7 @@ class Connection(ConnectionBase):
-        
+
              transport = 'local'
              has_pipelining = True
         +    _remote_is_local = True
-        
+
              def __init__(self, *args, **kwargs):
-        
+
         EOF
     - name: get ansible install location
       changed_when: false
@@ -44,3 +43,48 @@
         chdir: "{{ ansible_dir.stdout }}"
       failed_when: 'patched_out.rc != 0 and "patch does not apply" not in patched_out.stderr'
       changed_when: 'patched_out.rc == 0'
+    - name: check if python3-apt is installed
+      ignore_errors: true
+      register: py3apt
+      ansible.builtin.apt:
+        name: python3-apt
+    - name: create python3-apt deb package
+      when: "py3apt is failed"
+      block:
+        - name: get python-apt url
+          ansible.builtin.shell: |
+            curl -sL https://packages.termux.dev/apt/termux-main/pool/main/p/python-apt \
+                | grep "_aarch64.deb" \
+                | grep -oP '(?<=href=")[^"]+'
+          register: aptfile
+        - name: download python-apt deb
+          ansible.builtin.get_url:
+            url: "https://packages.termux.dev/apt/termux-main/pool/main/p/python-apt/{{ aptfile.stdout }}"
+            dest: "$PREFIX/tmp/python-apt.deb"
+        - name: rmdir pyapt
+          ansible.builtin.file:
+            name: $PREFIX/tmp/pyapt
+            state: absent
+        - name: makedir pyapt
+          ansible.builtin.file:
+            name: $PREFIX/tmp/pyapt
+            state: directory
+        - name: unpack deb file
+          ansible.builtin.command: dpkg-deb -R python-apt.deb pyapt
+          args:
+            chdir: "$PREFIX/tmp"
+        - name: modify deb file
+          ansible.builtin.lineinfile:
+            path: "$PREFIX/tmp/pyapt/DEBIAN/control"
+            regexp: '^Package: python-apt$'
+            line: 'Package: python3-apt'
+        - name: pack deb file
+          ansible.builtin.command: dpkg-deb -b pyapt python3-apt_aarch64.deb
+          args:
+            chdir: "$PREFIX/tmp"
+        - name: install python-apt dependencies
+          ansible.builtin.command: apt -o Apt::Get::Assume-Yes=true install texinfo update-info-dir
+        - name: install python3-apt deb file
+          ansible.builtin.command: dpkg -i python3-apt_aarch64.deb
+          args:
+            chdir: "$PREFIX/tmp"

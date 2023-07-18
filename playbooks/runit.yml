@@ -1,0 +1,22 @@
+#!/usr/bin/env ansible-playbook
+- hosts: termux,localhost
+  connection: local
+  gather_facts: true
+  gather_subset:
+    - "env"
+    - "!all"
+    - "!min"
+  name: runit services setup
+  tasks:
+    - name: install termux-services
+      ansible.builtin.apt:
+        name: termux-services
+        state: latest
+    - name: install redis
+      ansible.builtin.apt:
+        name: redis
+        state: latest
+    - name: install serf
+      ansible.builtin.command: go install -ldflags="-w -s" github.com/hashicorp/serf/cmd/serf@main
+    - name: setup serf runit service todo!
+      ansible.builtin.command: which serf

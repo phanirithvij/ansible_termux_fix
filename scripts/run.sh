@@ -1,4 +1,7 @@
 set -x
 
-ANSIBLE_STDOUT_CALLBACK=yaml ./playbooks/termux_patch.yml
-ANSIBLE_STDOUT_CALLBACK=yaml ./playbooks/pacman.yml
+SCRIPTPATH="$(cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P)"
+
+$SCRIPTPATH/install_ansible.sh
+$SCRIPTPATH/patch.sh
+#ANSIBLE_STDOUT_CALLBACK=yaml ./playbooks/pacman.yml

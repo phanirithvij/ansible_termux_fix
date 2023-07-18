@@ -1,6 +1,5 @@
 #!/usr/bin/env ansible-playbook
 # https://wiki.termux.com/wiki/Switching_package_manager
----
 - hosts: localhost
   connection: local
   gather_facts: true

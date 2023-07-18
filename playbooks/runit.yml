@@ -12,11 +12,116 @@
       ansible.builtin.apt:
         name: termux-services
         state: latest
-    - name: install redis
-      ansible.builtin.apt:
-        name: redis
+    - name: install vsv
+      # https://github.com/bahamas10/vsv
+      community.general.cargo:
+        name: vsv
         state: latest
-    - name: install serf
-      ansible.builtin.command: go install -ldflags="-w -s" github.com/hashicorp/serf/cmd/serf@main
-    - name: setup serf runit service todo!
-      ansible.builtin.command: which serf
+    - name: setup redis
+      block:
+        - name: install redis
+          ansible.builtin.apt:
+            name: redis
+            state: latest
+        - name: setup redis runit service
+          block:
+            - name: make service log directory
+              ansible.builtin.file:
+                path: "$PREFIX/var/service/redis/log"
+                state: directory
+                recurse: true
+            - name: symlink log to svlogger
+              ansible.builtin.file:
+                src: $PREFIX/share/termux-services/svlogger
+                dest: $PREFIX/var/service/redis/log/run
+                state: link
+            - name: create run script
+              ansible.builtin.copy:
+                content: "#!/bin/sh"
+                mode: '0755'
+                force: false
+                dest: $PREFIX/var/service/redis/run
+            - name: write service script
+              ansible.builtin.blockinfile:
+                dest: $PREFIX/var/service/redis/run
+                marker: "# {mark} ansible managed runit service"
+                block: |
+                  exec redis-server $PREFIX/etc/redis.conf \
+                    --bind 0.0.0.0 \
+                    --ignore-warnings ARM64-COW-BUG \
+                    --protected-mode no \
+                    2>&1
+    - name: setup serf
+      block:
+        - name: check if serf exists
+          ansible.builtin.shell: command -v serf
+          register: serfe
+          changed_when: false
+        - name: install serf
+          when: "serfe.rc != 0"
+          ansible.builtin.command: go install -ldflags="-w -s" github.com/hashicorp/serf/cmd/serf@master
+        - name: setup serf runit service
+          block:
+            - name: make service log directory
+              ansible.builtin.file:
+                path: "$PREFIX/var/service/serf/log"
+                state: directory
+                recurse: true
+            - name: symlink log to svlogger
+              ansible.builtin.file:
+                src: $PREFIX/share/termux-services/svlogger
+                dest: $PREFIX/var/service/serf/log/run
+                state: link
+            - name: scripts dir
+              ansible.builtin.file:
+                path: $HOME/.config/serf/scripts
+                recurse: true
+                state: directory
+            - name: snapshot file
+              ansible.builtin.copy:
+                dest: $HOME/.config/serf/snapshot.json
+                content: ""
+                force: false
+                mode: '644'
+            - name: write serf config
+              register: config_copy_res
+              ansible.builtin.copy:
+                dest: $HOME/.config/serf/config.json
+                mode: '644'
+                force: true
+                content: |
+                  {
+                    "discover": "swarm",
+                    "node_name": "termux",
+                    "event_handlers": [
+                      "~/.config/serf/scripts/handler.py"
+                    ],
+                    "bind": "0.0.0.0:7946",
+                    "rpc_addr": "0.0.0.0:7373",
+                    "snapshot_path": "/data/data/com.termux/files/home/.config/serf/snapshot.snap",
+                    "rejoin_after_leave": true,
+                    "tombstone_timeout": "10m",
+                    "tags_file": "/data/data/com.termux/files/home/.config/serf/tags.json"
+                  }
+            # - name: TODO copy serf handler script from dotfiles
+            - name: create run script
+              ansible.builtin.copy:
+                content: "#!/bin/sh"
+                mode: '0755'
+                force: false
+                dest: $PREFIX/var/service/serf/run
+            - name: write service script
+              ansible.builtin.blockinfile:
+                dest: $PREFIX/var/service/serf/run
+                marker: "# {mark} ansible managed runit service"
+                block: |
+                  exec serf agent \
+                    -config-file=$HOME/.config/serf/config.json
+            - name: enable serf service
+              ansible.builtin.command: vsv enable serf
+              register: outt
+              changed_when: outt.rc != 0
+            - name: restart serf service
+              when: config_copy_res.changed
+              ansible.builtin.command: vsv restart serf
+              changed_when: false

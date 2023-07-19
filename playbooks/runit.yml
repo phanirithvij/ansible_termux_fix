@@ -1,11 +1,7 @@
 #!/usr/bin/env ansible-playbook
 - hosts: termux,localhost
   connection: local
-  gather_facts: true
-  gather_subset:
-    - "env"
-    - "!all"
-    - "!min"
+  gather_facts: false
   name: runit services setup
   tasks:
     - name: install termux-services
@@ -107,14 +103,15 @@
                     "discover": "swarm",
                     "node_name": "termux",
                     "event_handlers": [
-                      "~/.config/serf/scripts/handler.py"
+                      "~/.config/serf/scripts/handler"
                     ],
                     "bind": "0.0.0.0:7946",
                     "rpc_addr": "0.0.0.0:7373",
                     "snapshot_path": "/data/data/com.termux/files/home/.config/serf/snapshot.snap",
                     "rejoin_after_leave": true,
                     "tombstone_timeout": "10m",
-                    "tags_file": "/data/data/com.termux/files/home/.config/serf/tags.json"
+                    "tags_file": "/data/data/com.termux/files/home/.config/serf/tags.json",
+                    "log_level": "debug"
                   }
             # - name: TODO copy serf handler script from dotfiles
             - name: "serf: create run script"
@@ -143,21 +140,24 @@
               ansible.builtin.command: vsv restart serf
               changed_when: false
               # TODO move this rpc-addr into an env var SERF_RPC_ADDR
-            - name: "serf: get existing tags"
+            - name: "serf: set tags"
               tags: [serf, serf_quick]
-              changed_when: false
-              register: existing_tags
-              ansible.builtin.shell: |
-                serf info -rpc-addr=0.0.0.0:7373 -format=json \
-                | jq -r '.tags | to_entries | map("\(.key)=\(.value|tostring)") | join(" ")'
-              # TODO move tags into a variable to reuse
-            - name: "serf: set tags for termux"
-              tags: [serf, serf_quick]
-              ansible.builtin.shell: |
-                echo \
-                  class=termux \
-                  offers=redis,sshd \
-                  redis_port=6379 \
-                  sshd_port=8022 \
-                | xargs -n 1 serf tags -rpc-addr=0.0.0.0:7373 -set
-              changed_when: "'class=termux' not in existing_tags.stdout"
+              vars:
+                # TODO use as a yaml and auto alphabetic order it and get this format
+                # TODO think of the externally set tags and not overwriting them
+                # TODO remove tags that don't exist in the serf_tags
+                # TODO(*) use a custom query host-capablilites to get these instead of tags
+                serf_tags: "class=termux"
+              block:
+                - name: "serf: get existing tags"
+                  changed_when: false
+                  register: existing_tags
+                  ansible.builtin.shell: |
+                    serf info -rpc-addr=0.0.0.0:7373 -format=json \
+                    | jq -r '.tags | to_entries | map("\(.key)=\(.value|tostring)") | join(" ")'
+                - name: "serf: set tags for termux"
+                  ansible.builtin.shell: |
+                    echo {{ serf_tags }} \
+                    | xargs -n 1 serf tags -rpc-addr=0.0.0.0:7373 -set
+                  when: "serf_tags != existing_tags.stdout"
+
